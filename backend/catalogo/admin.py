@@ -58,14 +58,15 @@ class ProductoAdmin(admin.ModelAdmin):
         "tamano",
         "forma",
         "tipo_precio",
-        "precio",
+        "precio_compra",
+        "precio_venta",
         "precio_kilo",
         "tipo_almacenamiento",
         "requiere_produccion",
         "disponible_para_pedido",
     )
     list_display_links = ("sku",)
-    list_editable = ("precio", "disponible_para_pedido")
+    list_editable = ("precio_compra", "precio_venta", "disponible_para_pedido")
     list_filter = (
         "linea__categoria",
         "tipo_almacenamiento",
@@ -100,7 +101,7 @@ class ProductoAdmin(admin.ModelAdmin):
                 )
             },
         ),
-        ("Precio", {"fields": ("tipo_precio", "precio")}),
+        ("Precio", {"fields": ("tipo_precio", "precio_compra", "precio_venta")}),
         ("Proveedores", {"fields": ("proveedor_1", "proveedor_2")}),
         (
             "Producción y almacenamiento",
@@ -127,7 +128,7 @@ class ProductoAdmin(admin.ModelAdmin):
 
     @admin.display(description="tamaño", ordering="contenido_neto")
     def tamano(self, obj):
-        return obj.etiqueta_tamano or obj.etiqueta_empaque or "—"
+        return obj.etiqueta_tamano or "—"
 
     @admin.display(description="$/kg")
     def precio_kilo(self, obj):

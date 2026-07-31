@@ -89,6 +89,7 @@ class Producto(models.Model):
     class TipoPrecio(models.TextChoices):
         PIEZA = "pieza", "Por pieza"
         KILO = "kilo", "Por kilo"
+        LITRO = "litro", "Por litro"
 
     class TipoAlmacenamiento(models.TextChoices):
         SECO = "seco", "Seco"
@@ -96,7 +97,7 @@ class Producto(models.Model):
         CONGELADO = "congelado", "Congelado"
 
     class Unidad(models.TextChoices):
-        KILO = "kg", "kg"
+        GRAMO = "g", "g"
         MILILITRO = "ml", "ml"
         PIEZA = "pza", "pza"
 
@@ -106,6 +107,11 @@ class Producto(models.Model):
         REBANADO = "REB", "Rebanado"
         PORCION = "POR", "Porción"
         CUNA = "CUN", "Cuña"
+        TETRAPAK = "TPK", "Tetrapak"
+        CAJA = "CJA", "Caja"
+        GRANEL = "GRA", "Granel"
+        CUBETA = "CUB", "Cubeta"
+
 
     # --- identidad ----------------------------------------------------------
     sku = models.CharField(
@@ -161,15 +167,17 @@ class Producto(models.Model):
     tipo_precio = models.CharField(
         "tipo de precio", max_length=10, choices=TipoPrecio.choices
     )
-    precio = models.DecimalField("precio", max_digits=10, decimal_places=2)
+    precio_compra = models.DecimalField("precio compra", max_digits=10, decimal_places=2)
+    precio_venta = models.DecimalField("precio venta", max_digits=10, decimal_places=2)
     proveedor_1 = models.CharField("proveedor 1", max_length=150, blank=True)
     proveedor_2 = models.CharField("proveedor 2", max_length=150, blank=True)
 
     # --- operación ----------------------------------------------------------
+    vida_anaquel = models.IntegerField(verbose_name="dias anaquel")
     requiere_produccion = models.BooleanField(
         "requiere producción",
         default=False,
-        help_text="Se rebana o porciona en casa",
+        help_text="",
     )
     producido_de = models.ForeignKey(
         "self",
@@ -248,9 +256,24 @@ class Producto(models.Model):
     def precio_por_kilo(self):
         """Precio comparable entre marcas, para ordenar en el listado."""
         if self.tipo_precio == self.TipoPrecio.KILO:
-            return self.precio
-        if self.contenido_neto and self.unidad_contenido == self.Unidad.KILO:
-            return self.precio / (self.contenido_neto)
+            return self.precio_venta
+        if self.contenido_neto and self.unidad_contenido == self.Unidad.GRAMO:
+            return self.precio_venta / (self.contenido_neto / 1000)
+        return None
+
+    @property
+    def precio_por_litro(self):
+        """Precio comparable entre marcas, para ordenar en el listado."""
+        if self.tipo_precio == self.TipoPrecio.LITRO:
+            return self.precio_venta
+        if self.contenido_neto and self.unidad_contenido == self.Unidad.MILILITRO:
+            return self.precio_venta / (self.contenido_neto / 1000)
+        return None
+
+    @property
+    def margen_del_producto(self):
+        if self.precio_compra and self.precio_venta:
+            return (self.precio_venta - self.precio_compra) / self.precio_venta
         return None
 
     # --- SKU ----------------------------------------------------------------
