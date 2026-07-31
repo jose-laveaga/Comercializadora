@@ -249,8 +249,8 @@ class Producto(models.Model):
         """Precio comparable entre marcas, para ordenar en el listado."""
         if self.tipo_precio == self.TipoPrecio.KILO:
             return self.precio
-        if self.contenido_neto and self.unidad_contenido == self.Unidad.GRAMO:
-            return self.precio / (self.contenido_neto / 1000)
+        if self.contenido_neto and self.unidad_contenido == self.Unidad.KILO:
+            return self.precio / (self.contenido_neto)
         return None
 
     # --- SKU ----------------------------------------------------------------
