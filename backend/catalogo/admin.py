@@ -57,11 +57,12 @@ class ProductoAdmin(admin.ModelAdmin):
         "marca",
         "tamano",
         "forma",
-        "tipo_precio",
+        "vida_anaquel",
         "precio_compra",
         "precio_venta",
         "precio_kilo",
-        "tipo_almacenamiento",
+        "precio_litro",
+        "margen_del_producto",
         "requiere_produccion",
         "disponible_para_pedido",
     )
@@ -107,7 +108,7 @@ class ProductoAdmin(admin.ModelAdmin):
             "Producción y almacenamiento",
             {
                 "fields": (
-                    "requiere_produccion",
+                    "vida_anaquel",
                     "producido_de",
                     "tipo_almacenamiento",
                     "disponible_para_pedido",
@@ -133,6 +134,11 @@ class ProductoAdmin(admin.ModelAdmin):
     @admin.display(description="$/kg")
     def precio_kilo(self, obj):
         valor = obj.precio_por_kilo
+        return f"{valor:.2f}" if valor is not None else "—"
+
+    @admin.display(description="$/lt")
+    def precio_litro(self, obj):
+        valor = obj.precio_por_litro
         return f"{valor:.2f}" if valor is not None else "—"
 
     def get_readonly_fields(self, request, obj=None):

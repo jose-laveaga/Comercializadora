@@ -173,7 +173,7 @@ class Producto(models.Model):
     proveedor_2 = models.CharField("proveedor 2", max_length=150, blank=True)
 
     # --- operación ----------------------------------------------------------
-    vida_anaquel = models.IntegerField(verbose_name="dias anaquel")
+    vida_anaquel = models.IntegerField(verbose_name="días anaquel")
     requiere_produccion = models.BooleanField(
         "requiere producción",
         default=False,
@@ -273,7 +273,7 @@ class Producto(models.Model):
     @property
     def margen_del_producto(self):
         if self.precio_compra and self.precio_venta:
-            return (self.precio_venta - self.precio_compra) / self.precio_venta
+            return round(((self.precio_venta - self.precio_compra) / self.precio_venta) * 100, ndigits=2)
         return None
 
     # --- SKU ----------------------------------------------------------------
