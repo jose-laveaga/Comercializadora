@@ -8,7 +8,9 @@ class StockInsuficienteError(Exception):
     """Una salida dejaría Lote.cantidad_actual en negativo."""
 
 
-def registrar_movimiento(lote, tipo, cantidad, usuario=None, notas="", recepcion_detalle=None):
+def registrar_movimiento(
+    lote, tipo, cantidad, usuario=None, notas="", recepcion_detalle=None, surtido_detalle=None
+):
     """Única vía soportada para cambiar Lote.cantidad_actual.
 
     Bloquea la fila del lote, valida que el movimiento no la deje negativa,
@@ -29,6 +31,7 @@ def registrar_movimiento(lote, tipo, cantidad, usuario=None, notas="", recepcion
             usuario=usuario,
             notas=notas,
             recepcion_detalle=recepcion_detalle,
+            surtido_detalle=surtido_detalle,
         )
         Lote.objects.filter(pk=lote.pk).update(cantidad_actual=F("cantidad_actual") + cantidad)
     lote.refresh_from_db(fields=["cantidad_actual"])

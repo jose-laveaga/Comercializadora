@@ -104,7 +104,15 @@ class LoteAdmin(SoloLecturaAdminMixin, admin.ModelAdmin):
 
 @admin.register(MovimientoInventario)
 class MovimientoInventarioAdmin(SoloLecturaAdminMixin, admin.ModelAdmin):
-    list_display = ("fecha", "lote", "tipo", "cantidad", "usuario", "recepcion_detalle")
+    list_display = (
+        "fecha",
+        "lote",
+        "tipo",
+        "cantidad",
+        "usuario",
+        "recepcion_detalle",
+        "surtido_detalle",
+    )
     list_filter = ("tipo",)
     search_fields = ("lote__codigo", "notas")
     list_select_related = ("lote", "usuario")

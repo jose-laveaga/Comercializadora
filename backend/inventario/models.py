@@ -252,6 +252,14 @@ class MovimientoInventario(TimeStampedModel):
         related_name="movimientos",
         verbose_name="detalle de recepción",
     )
+    surtido_detalle = models.ForeignKey(
+        "pedidos.SurtidoDetalle",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="movimientos",
+        verbose_name="detalle de surtido",
+    )
 
     class Meta:
         verbose_name = "movimiento de inventario"
