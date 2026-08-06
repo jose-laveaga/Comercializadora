@@ -63,7 +63,7 @@ class ProductoAdmin(admin.ModelAdmin):
         "precio_kilo",
         "precio_litro",
         "margen_del_producto",
-        "requiere_produccion",
+        "unidades_por_empaque",
         "disponible_para_pedido",
     )
     list_display_links = ("sku",)
@@ -72,6 +72,7 @@ class ProductoAdmin(admin.ModelAdmin):
         "linea__categoria",
         "tipo_almacenamiento",
         "forma",
+        "unidades_por_empaque",
         "requiere_produccion",
         "disponible_para_pedido",
         "visible_para_clientes",
@@ -109,7 +110,7 @@ class ProductoAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "vida_anaquel",
-                    "producido_de",
+                    "unidades_por_empaque",
                     "tipo_almacenamiento",
                     "disponible_para_pedido",
                     "notas",

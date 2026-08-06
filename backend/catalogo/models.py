@@ -172,6 +172,8 @@ class Producto(models.Model):
     proveedor_1 = models.CharField("proveedor 1", max_length=150, blank=True)
     proveedor_2 = models.CharField("proveedor 2", max_length=150, blank=True)
 
+    unidades_por_empaque  = models.IntegerField(verbose_name="unidades por empaque", blank=True, default=1, help_text="Cantidad de unidades por empaque o caja.")
+
     # --- operación ----------------------------------------------------------
     vida_anaquel = models.IntegerField(verbose_name="días anaquel")
     requiere_produccion = models.BooleanField(
