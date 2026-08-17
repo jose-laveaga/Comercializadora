@@ -1,4 +1,9 @@
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
+
+from core.models import TimeStampedModel
+
+from . import gtin
 
 
 class Categoria(models.Model):
@@ -327,3 +332,126 @@ class Producto(models.Model):
             .order_by("-contenido_neto")
             .first()
         )
+
+class CodigoBarras(TimeStampedModel):
+    """Un código de barras del fabricante asociado a un producto.
+
+    Es tabla aparte y no un campo en Producto porque un mismo producto suele
+    traer más de uno: el de la pieza y el de la caja que la contiene. Escanear
+    la caja tiene que significar N piezas, y eso un solo CharField no lo puede
+    decir.
+
+    Ojo con la distinción: esto identifica QUÉ es (un mascarpone Lyncott de
+    2260 g), nunca CUÁL es. La identidad del ejemplar concreto —con su
+    caducidad y su costo— la lleva inventario.Lote.codigo, que se genera aquí
+    dentro y se imprime en la etiqueta.
+    """
+
+    class Simbologia(models.TextChoices):
+        EAN13 = "ean13", "EAN-13"
+        EAN8 = "ean8", "EAN-8"
+        UPCA = "upca", "UPC-A"
+        ITF14 = "itf14", "ITF-14 (caja)"
+        CODE128 = "code128", "Code 128"
+        OTRO = "otro", "Otro"
+
+    class NivelEmpaque(models.TextChoices):
+        PIEZA = "pieza", "Pieza"
+        CAJA = "caja", "Caja"
+
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.CASCADE,
+        related_name="codigos_barras",
+        verbose_name="producto",
+    )
+    codigo = models.CharField(
+        "código",
+        max_length=32,
+        unique=True,
+        db_index=True,
+        help_text="Tal como viene impreso en el empaque. Se guarda sin espacios ni guiones.",
+    )
+    simbologia = models.CharField(
+        "simbología", max_length=10, choices=Simbologia.choices, default=Simbologia.EAN13
+    )
+    nivel_empaque = models.CharField(
+        "nivel de empaque",
+        max_length=10,
+        choices=NivelEmpaque.choices,
+        default=NivelEmpaque.PIEZA,
+    )
+    unidades = models.PositiveIntegerField(
+        "unidades por escaneo",
+        default=1,
+        help_text="Cuántas piezas representa un escaneo de este código. 1 si es la pieza suelta.",
+    )
+    principal = models.BooleanField(
+        "principal",
+        default=False,
+        help_text="El que se usa al mostrar un solo código del producto. Uno por producto.",
+    )
+    activo = models.BooleanField("activo", default=True)
+
+    class Meta:
+        verbose_name = "código de barras"
+        verbose_name_plural = "códigos de barras"
+        ordering = ["producto", "-principal", "codigo"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["producto"],
+                condition=models.Q(principal=True),
+                name="codigo_barras_principal_unico_por_producto",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.codigo} ({self.get_simbologia_display()})"
+
+    def clean(self):
+        super().clean()
+        self.codigo = self._normalizar(self.codigo, self.simbologia)
+
+        if not self.codigo:
+            raise ValidationError({"codigo": "El código no puede quedar vacío."})
+
+        largo = gtin.LONGITUDES.get(self.simbologia)
+        if largo is not None:
+            if not self.codigo.isdigit() or len(self.codigo) != largo:
+                raise ValidationError(
+                    {"codigo": f"Un {self.get_simbologia_display()} lleva exactamente {largo} dígitos."}
+                )
+            if not gtin.es_valido(self.codigo, self.simbologia):
+                esperado = gtin.digito_verificador(self.codigo[:-1])
+                raise ValidationError(
+                    {
+                        "codigo": (
+                            "El dígito verificador no cuadra: debería terminar en "
+                            f"{esperado}, no en {self.codigo[-1]}. Revisa la captura."
+                        )
+                    }
+                )
+
+        if self.nivel_empaque == self.NivelEmpaque.PIEZA and self.unidades != 1:
+            raise ValidationError(
+                {"unidades": "Un código de pieza representa exactamente 1 unidad."}
+            )
+        if self.nivel_empaque == self.NivelEmpaque.CAJA and self.unidades < 2:
+            raise ValidationError(
+                {"unidades": "Un código de caja debe representar 2 o más unidades."}
+            )
+
+    def save(self, *args, **kwargs):
+        # clean() solo corre vía formularios; normalizar aquí también evita que
+        # un alta por script o por shell meta un código con guiones que después
+        # ningún escaneo va a encontrar.
+        self.codigo = self._normalizar(self.codigo, self.simbologia)
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def _normalizar(codigo, simbologia):
+        """Deja el código en la forma con la que se va a comparar al escanear."""
+        codigo = (codigo or "").strip()
+        if simbologia in gtin.LONGITUDES:
+            return gtin.normalizar(codigo)
+        return codigo.upper()

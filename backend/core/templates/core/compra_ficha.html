@@ -1,0 +1,222 @@
+{% extends "core/base_temporal.html" %}
+
+{% block titulo %}{{ orden.folio }}{% endblock %}
+{% block encabezado %}{{ orden.folio }}{% endblock %}
+{% block subtitulo %}
+  {{ orden.proveedor }} → {{ orden.almacen_destino }} ·
+  emitida {{ orden.fecha_emision|date:"Y-m-d" }} ·
+  <strong>{{ orden.get_estatus_display }}</strong> ·
+  subtotal ${{ orden.subtotal|floatformat:2 }}
+  · <a href="{% url 'core:compras' %}">← todas las órdenes</a>
+{% endblock %}
+
+{% block contenido %}
+
+{# ---------- líneas ---------- #}
+<section>
+  <h2>Líneas de la orden</h2>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>Producto</th><th>Unidad</th>
+      <th class="num">Pedido</th><th class="num">Recibido</th>
+      <th class="num">Pendiente</th><th class="num">Faltó</th>
+      <th class="num">Costo</th><th class="num">Importe</th>
+      <th>Estado</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for d in detalles %}
+      <tr>
+        <td>{{ d.producto.sku }}<br><span class="apagado">{{ d.producto.nombre_completo }}</span></td>
+        <td>{{ d.get_unidad_compra_display }}</td>
+        <td class="num">{{ d.cantidad_pedida|floatformat:3 }}</td>
+        <td class="num">{{ d.cantidad_recibida|floatformat:3 }}</td>
+        <td class="num">{{ d.cantidad_pendiente|floatformat:3 }}</td>
+        <td class="num{% if d.cantidad_faltante %} neg{% endif %}">{{ d.cantidad_faltante|floatformat:3 }}</td>
+        <td class="num">${{ d.costo_unitario|floatformat:2 }}</td>
+        <td class="num">${{ d.importe|floatformat:2 }}</td>
+        <td>
+          {% if d.cerrado %}
+            <strong>Cerrada</strong><br>
+            <span class="apagado">
+              {{ d.get_motivo_faltante_display }}
+              {% if d.notas_faltante %}— {{ d.notas_faltante }}{% endif %}
+              {% if d.cerrado_por %}<br>por {{ d.cerrado_por }}{% endif %}
+              {% if d.cerrado_en %} el {{ d.cerrado_en|date:"Y-m-d H:i" }}{% endif %}
+            </span>
+          {% elif d.cantidad_pendiente == 0 %}
+            Completa
+          {% else %}
+            Esperando
+          {% endif %}
+        </td>
+        <td>
+          {% if d.cerrado %}
+            <form method="post" action="{% url 'core:compra_reabrir_faltante' orden.pk d.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="sec">Reabrir</button>
+            </form>
+          {% elif d.cantidad_recibida == 0 %}
+            <form method="post" action="{% url 'core:compra_linea_borrar' orden.pk d.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="sec">Borrar</button>
+            </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="10" class="vacio">Esta orden no tiene líneas todavía.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- agregar línea ---------- #}
+{% if orden.esta_abierta %}
+<section>
+  <h2>Agregar línea</h2>
+  <div class="panel ancho">
+    <form method="post" action="{% url 'core:compra_linea' orden.pk %}">
+      {% csrf_token %}
+      {{ form_linea.as_p }}
+      <button type="submit" class="accion">Agregar</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{# ---------- recibir ---------- #}
+{% if pendientes %}
+<section>
+  <h2>Recibir mercancía</h2>
+  <p class="apagado">
+    Captura solo las líneas que llegaron; las demás déjalas vacías. El
+    <strong>costo real</strong> es el de la factura y es el que valúa el lote —
+    viene prellenado con lo cotizado, corrígelo si no coincide.
+    Marca <strong>cerrar faltante</strong> únicamente cuando lo que no llegó
+    <em>ya no va a llegar</em>; si viene en otra entrega, déjalo sin marcar y la
+    línea sigue esperando.
+  </p>
+
+  <form method="post" action="{% url 'core:compra_recibir' orden.pk %}">
+    {% csrf_token %}
+    {{ formset.management_form }}
+
+    <div class="panel ancho">
+      {{ form_recepcion.as_p }}
+    </div>
+
+    <div class="wrap"><table>
+      <thead><tr>
+        <th>Producto</th><th class="num">Pendiente</th>
+        <th class="num">Recibido</th><th>Caducidad</th>
+        <th class="num">Costo real</th><th>Lote proveedor</th>
+        <th>Cerrar faltante</th><th>Motivo</th><th>Notas</th>
+      </tr></thead>
+      <tbody>
+      {% for form, d in filas_recepcion %}
+        <tr>
+          <td>
+            {{ form.detalle_id }}
+            {{ d.producto.sku }}<br>
+            <span class="apagado">{{ d.producto.nombre_completo }}</span>
+          </td>
+          <td class="num">{{ d.cantidad_pendiente|floatformat:3 }}</td>
+          <td class="num">{{ form.cantidad_recibida }}</td>
+          <td>{{ form.fecha_caducidad }}</td>
+          <td class="num">{{ form.costo_unitario_real }}</td>
+          <td>{{ form.codigo_lote_proveedor }}</td>
+          <td>{{ form.cerrar_faltante }}</td>
+          <td>{{ form.motivo_faltante }}</td>
+          <td>{{ form.notas_faltante }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+
+    <button type="submit" class="accion">Registrar recepción</button>
+  </form>
+</section>
+
+{# ---------- cerrar sin recibir ---------- #}
+<section>
+  <h2>Cerrar un faltante sin recibir nada</h2>
+  <p class="apagado">
+    Para cuando el proveedor avisa que ya no lo va a mandar y no hay entrega de
+    por medio. Se puede reabrir después si cambia de opinión.
+  </p>
+  <div class="rejilla">
+    {% for d in pendientes %}
+      <div class="panel">
+        <h3>{{ d.producto.sku }}</h3>
+        <p class="apagado">Faltan {{ d.cantidad_pendiente|floatformat:3 }} de {{ d.cantidad_pedida|floatformat:3 }}</p>
+        <form method="post" action="{% url 'core:compra_cerrar_faltante' orden.pk d.pk %}">
+          {% csrf_token %}
+          <label>Motivo</label>
+          <select name="motivo_faltante">
+            {% for valor, etiqueta in motivos %}<option value="{{ valor }}">{{ etiqueta }}</option>{% endfor %}
+          </select>
+          <label>Notas</label>
+          <input type="text" name="notas_faltante" autocomplete="off">
+          <button type="submit" class="sec">Cerrar faltante</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{# ---------- historial ---------- #}
+<section>
+  <h2>Recepciones registradas</h2>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>#</th><th>Fecha</th><th>Factura</th><th>Recibió</th>
+      <th>Producto</th><th class="num">Cantidad</th>
+      <th class="num">Costo real</th><th class="num">Valor</th><th>Caduca</th>
+    </tr></thead>
+    <tbody>
+    {% for r in recepciones %}
+      {% for d in r.detalles.all %}
+        <tr>
+          <td>{{ r.pk }}</td>
+          <td>{{ r.fecha_recepcion|date:"Y-m-d" }}</td>
+          <td>{{ r.folio_factura|default:"—" }}</td>
+          <td>{{ r.recibido_por|default:"—" }}</td>
+          <td>{{ d.orden_detalle.producto.sku }}</td>
+          <td class="num">{{ d.cantidad_recibida|floatformat:3 }}</td>
+          <td class="num">${{ d.costo_unitario_real|floatformat:2 }}</td>
+          <td class="num">${{ d.importe|floatformat:2 }}</td>
+          <td>{{ d.fecha_caducidad|date:"Y-m-d" }}</td>
+        </tr>
+      {% endfor %}
+    {% empty %}
+      <tr><td colspan="9" class="vacio">Todavía no se recibe nada de esta orden.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- estatus ---------- #}
+{% if estatus_editables %}
+<section>
+  <h2>Estatus</h2>
+  <p class="apagado">
+    Solo los estatus previos a la entrega se ponen a mano. «Recibida»,
+    «Recibida parcial» y «Cerrada con faltante» los deduce el sistema de lo que
+    realmente se recibió y se cerró.
+  </p>
+  <div class="panel">
+    <form method="post" action="{% url 'core:compra_estatus' orden.pk %}">
+      {% csrf_token %}
+      <select name="estatus">
+        {% for valor, etiqueta in estatus_editables %}
+          <option value="{{ valor }}" {% if orden.estatus == valor %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="sec">Cambiar</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

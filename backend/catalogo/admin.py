@@ -1,6 +1,21 @@
 from django.contrib import admin
 
-from .models import Categoria, LineaProducto, Marca, Producto
+from .models import Categoria, CodigoBarras, LineaProducto, Marca, Producto
+
+
+class CodigoBarrasInline(admin.TabularInline):
+    """Los códigos del fabricante se capturan junto al producto, no aparte.
+
+    Un producto puede llevar varios: el de la pieza y el de la caja. El campo
+    `unidades` es el que hace útil la distinción — dice cuántas piezas vale un
+    escaneo de ese código.
+    """
+
+    model = CodigoBarras
+    extra = 0
+    fields = ("codigo", "simbologia", "nivel_empaque", "unidades", "principal", "activo")
+    verbose_name = "código de barras"
+    verbose_name_plural = "códigos de barras"
 
 
 @admin.register(Categoria)
@@ -81,12 +96,13 @@ class ProductoAdmin(admin.ModelAdmin):
     )
     search_fields = (
         "sku",
-        #"codigo_barras",
+        "codigos_barras__codigo",
         "linea__nombre",
         "marca__nombre",
         "proveedor_1",
         "proveedor_2",
     )
+    inlines = (CodigoBarrasInline,)
     autocomplete_fields = ("linea", "marca", "producido_de")
     list_select_related = ("linea", "linea__categoria", "marca")
     list_per_page = 50

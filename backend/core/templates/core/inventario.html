@@ -1,0 +1,339 @@
+{% extends "core/base_temporal.html" %}
+
+{% block titulo %}Inventario{% endblock %}
+{% block encabezado %}Inventario{% endblock %}
+{% block subtitulo %}
+  {{ hoy|date:"Y-m-d" }} · Lo que hay, dónde está y cómo se movió. Todo cambio de
+  existencia pasa por un movimiento — aquí se ven todos.
+{% endblock %}
+
+{% block contenido %}
+
+{# ---------- semáforo ---------- #}
+<section>
+  <h2>Caducidad del inventario disponible</h2>
+  <div class="rejilla">
+    {% for s in semaforo %}
+      <div class="caja {{ s.clave }}">
+        <div class="etiqueta">{{ s.etiqueta }}</div>
+        <div class="cifra">{{ s.lotes }}</div>
+        <div class="sub">{{ s.unidades|floatformat:3 }} u · ${{ s.valor|floatformat:2 }}</div>
+      </div>
+    {% endfor %}
+    <div class="caja">
+      <div class="etiqueta">Valor total</div>
+      <div class="cifra">${{ valor_total|floatformat:2 }}</div>
+      <div class="sub">lotes con existencia</div>
+    </div>
+  </div>
+</section>
+
+{# ---------- buscador por código ---------- #}
+<section>
+  <h2>Buscar por código</h2>
+  <p class="apagado">
+    Escanea o pega un código de lote, un SKU o un código de barras del
+    fabricante. Resuelve todo por el mismo camino que van a usar el surtido
+    dirigido y el conteo cíclico cuando existan.
+  </p>
+  <form method="get">
+    <input type="text" name="codigo" autofocus autocomplete="off"
+           placeholder="MASC-LYN-2260G-BAR-260813-1"
+           value="{{ escaneo.resultado.codigo|default:'' }}" style="min-width:22em">
+    <button type="submit" class="sec">Resolver</button>
+  </form>
+
+  {% if escaneo %}
+    {% if escaneo.resultado %}
+      <p>
+        <strong>{{ escaneo.resultado.descripcion }}</strong>
+        {% if escaneo.resultado.unidades > 1 %}
+          — un escaneo vale {{ escaneo.resultado.unidades }} piezas
+        {% endif %}
+      </p>
+      <div class="wrap"><table>
+        <thead><tr>
+          <th>Lote</th><th>Almacén</th><th>Caduca</th>
+          <th class="num">Días</th><th class="num">Existencia</th><th>Etiqueta</th>
+        </tr></thead>
+        <tbody>
+        {% for l in escaneo.lotes %}
+          <tr>
+            <td>{{ l.codigo }}</td>
+            <td>{{ l.almacen.clave }}</td>
+            <td>{{ l.fecha_caducidad|date:"Y-m-d" }}</td>
+            <td class="num{% if l.esta_caducado %} neg{% endif %}">{{ l.dias_para_caducar }}</td>
+            <td class="num">{{ l.cantidad_actual|floatformat:3 }}</td>
+            <td><a href="{% url 'inventario:etiquetas_lote' %}?lotes={{ l.pk }}" target="_blank">Imprimir</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="vacio">Sin existencias de esto.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <p>Existencia total: {{ escaneo.existencia|floatformat:3 }} u.</p>
+    {% else %}
+      <p class="neg">
+        No se reconoció «{{ escaneo.resultado.codigo }}». No es un código de
+        lote, ni un SKU, ni un código de barras dado de alta.
+      </p>
+    {% endif %}
+  {% endif %}
+</section>
+
+{# ---------- lotes ---------- #}
+<section>
+  <h2>Lotes con existencia</h2>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>Lote</th><th>Producto</th><th>Almacén</th><th>Caduca</th>
+      <th class="num">Días</th><th>Semáforo</th>
+      <th class="num">Existencia</th><th class="num">Costo</th><th class="num">Valor</th>
+    </tr></thead>
+    <tbody>
+    {% for l in lotes %}
+      <tr>
+        <td>{{ l.codigo }}</td>
+        <td>{{ l.producto.sku }}</td>
+        <td>{{ l.almacen.clave }}</td>
+        <td>{{ l.fecha_caducidad|date:"Y-m-d" }}</td>
+        <td class="num{% if l.esta_caducado %} neg{% endif %}">{{ l.dias_para_caducar }}</td>
+        <td>{{ l.get_estatus_caducidad_display|default:l.estatus_caducidad }}</td>
+        <td class="num">{{ l.cantidad_actual|floatformat:3 }}</td>
+        <td class="num">${{ l.costo_unitario|floatformat:2 }}</td>
+        <td class="num">${{ l.valor_actual|floatformat:2 }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="vacio">Sin existencias.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- resumen y entrada ---------- #}
+<section>
+  <h2>Resumen y entrada</h2>
+  <div class="rejilla">
+    <div class="panel">
+      <h3>Total por producto</h3>
+      <div class="wrap"><table>
+        <thead><tr><th>SKU</th><th>Almacén</th><th class="num">Lotes</th><th class="num">Unidades</th></tr></thead>
+        <tbody>
+        {% for e in por_producto %}
+          <tr>
+            <td>{{ e.producto__sku }}</td><td>{{ e.almacen__clave }}</td>
+            <td class="num">{{ e.lotes }}</td><td class="num">{{ e.unidades|floatformat:3 }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="vacio">Sin existencias.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <h3>Entrada rápida de stock</h3>
+      <p class="apagado">
+        Ajuste positivo, sin orden de compra detrás. Para probar el surtido sin
+        montar la cadena de compra completa.
+      </p>
+      {% if hay_productos and hay_almacenes %}
+        <form method="post" action="{% url 'core:ajuste' %}">
+          {% csrf_token %}
+          {{ form_ajuste.as_p }}
+          <button type="submit" class="accion">Meter al inventario</button>
+        </form>
+      {% else %}
+        <p class="vacio">Necesitas un producto y un almacén.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h3>Simular salida FEFO</h3>
+      <p class="apagado">
+        Muestra de qué lotes saldría, sin tocar nada. Es el mismo cálculo que usa
+        el surtido real.
+      </p>
+      <form method="get">
+        <label>Producto</label>
+        <select name="sim_producto">
+          {% for p in productos %}
+            <option value="{{ p.pk }}" {% if simulacion.producto.pk == p.pk %}selected{% endif %}>{{ p.sku }}</option>
+          {% endfor %}
+        </select>
+        <label>Cantidad</label>
+        <input type="number" name="sim_cantidad" step="0.001" min="0.001"
+               value="{{ simulacion.cantidad|default:'' }}">
+        <button type="submit" class="sec">Simular</button>
+      </form>
+
+      {% if simulacion %}
+        {% if simulacion.error %}
+          <p class="neg">{{ simulacion.error }}</p>
+        {% else %}
+          <div class="wrap"><table>
+            <thead><tr><th>Lote</th><th>Caduca</th><th class="num">Toma</th><th class="num">Queda</th></tr></thead>
+            <tbody>
+            {% for paso in simulacion.pasos %}
+              <tr>
+                <td>{{ paso.lote.codigo }}</td>
+                <td>{{ paso.lote.fecha_caducidad|date:"Y-m-d" }}</td>
+                <td class="num">{{ paso.toma|floatformat:3 }}</td>
+                <td class="num">{{ paso.queda|floatformat:3 }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="4" class="vacio">No hay lotes disponibles.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table></div>
+          {% if simulacion.alcanza %}
+            <p>Alcanza: {{ simulacion.cantidad|floatformat:3 }} de {{ simulacion.producto.sku }}.</p>
+          {% else %}
+            <p class="neg">
+              No alcanza. Faltan {{ simulacion.faltante|floatformat:3 }} —
+              el surtido real fallaría con stock insuficiente.
+            </p>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+{# ---------- movimientos ---------- #}
+<section>
+  <h2>Movimientos</h2>
+  <form method="get" class="fila" style="margin-bottom:6px;">
+    <div>
+      <label>Filtrar por tipo</label>
+      <select name="tipo" onchange="this.form.submit()">
+        <option value="">Todos</option>
+        {% for valor, etiqueta in tipos %}
+          <option value="{{ valor }}" {% if tipo_activo == valor %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="sec">Filtrar</button>
+  </form>
+
+  <div class="wrap"><table>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Cantidad</th><th>Lote</th><th>Producto</th><th>Usuario</th><th>Origen</th><th>Notas</th></tr></thead>
+    <tbody>
+    {% for m in movimientos %}
+      <tr>
+        <td>{{ m.fecha|date:"Y-m-d H:i" }}</td>
+        <td>{{ m.get_tipo_display }}</td>
+        <td class="num{% if m.cantidad < 0 %} neg{% endif %}">{{ m.cantidad|floatformat:3 }}</td>
+        <td>{{ m.lote.codigo }}</td>
+        <td>{{ m.lote.producto.sku }}</td>
+        <td>{{ m.usuario|default:"—" }}</td>
+        <td>
+          {% if m.recepcion_detalle_id %}recepción #{{ m.recepcion_detalle_id }}
+          {% elif m.surtido_detalle_id %}surtido #{{ m.surtido_detalle_id }}
+          {% else %}—{% endif %}
+        </td>
+        <td class="apagado">{{ m.notas|default:"" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="vacio">Sin movimientos con ese filtro.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- catálogo ---------- #}
+<section>
+  <h2>Catálogo y almacenes</h2>
+  <div class="rejilla">
+    <div class="panel">
+      <h3>Almacenes</h3>
+      <div class="wrap"><table>
+        <thead><tr><th>Clave</th><th>Nombre</th><th>Temp.</th><th class="num">Lotes</th></tr></thead>
+        <tbody>
+        {% for a in almacenes %}
+          <tr>
+            <td>{{ a.clave }}</td><td>{{ a.nombre }}</td>
+            <td>{{ a.get_tipo_temperatura_display }}</td><td class="num">{{ a.n_lotes }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="vacio">Sin almacenes.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="panel">
+      <h3>Productos</h3>
+      <div class="wrap"><table>
+        <thead><tr><th>SKU</th><th>Nombre</th><th class="num">Compra</th><th class="num">Venta</th><th class="num">Anaquel</th></tr></thead>
+        <tbody>
+        {% for p in productos %}
+          <tr>
+            <td>{{ p.sku }}</td>
+            <td>{{ p.nombre_completo }}</td>
+            <td class="num{% if not p.precio_compra %} neg{% endif %}">${{ p.precio_compra|floatformat:2 }}</td>
+            <td class="num">${{ p.precio_venta|floatformat:2 }}</td>
+            <td class="num{% if not p.vida_anaquel %} neg{% endif %}">{{ p.vida_anaquel }} d</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="vacio">Sin productos.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <p class="apagado">En rojo: datos faltantes del catálogo que afectan costos y caducidades.</p>
+    </div>
+  </div>
+
+  <details style="margin-top:10px;">
+    <summary>Dar de alta producto, almacén o catálogo base</summary>
+    <div class="rejilla" style="margin-top:8px;">
+      <div class="panel">
+        <h3>Producto</h3>
+        <form method="post" action="{% url 'core:crear' 'producto' %}">
+          {% csrf_token %}{{ form_producto.as_p }}<button type="submit">Crear producto</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3>Almacén</h3>
+        <form method="post" action="{% url 'core:crear' 'almacen' %}">
+          {% csrf_token %}{{ form_almacen.as_p }}<button type="submit">Crear</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3>Línea de producto</h3>
+        <form method="post" action="{% url 'core:crear' 'linea' %}">
+          {% csrf_token %}{{ form_linea.as_p }}<button type="submit">Crear</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3>Categoría</h3>
+        <form method="post" action="{% url 'core:crear' 'categoria' %}">
+          {% csrf_token %}{{ form_categoria.as_p }}<button type="submit">Crear</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3>Marca</h3>
+        <form method="post" action="{% url 'core:crear' 'marca' %}">
+          {% csrf_token %}{{ form_marca.as_p }}<button type="submit">Crear</button>
+        </form>
+      </div>
+    </div>
+  </details>
+</section>
+
+{% if agotados %}
+<section>
+  <h2>Lotes agotados recientes</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Lote</th><th>Producto</th><th>Caducaba</th></tr></thead>
+    <tbody>
+    {% for l in agotados %}
+      <tr><td>{{ l.codigo }}</td><td>{{ l.producto.sku }}</td>
+          <td>{{ l.fecha_caducidad|date:"Y-m-d" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% endblock %}

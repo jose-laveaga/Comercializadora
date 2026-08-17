@@ -1,0 +1,210 @@
+{% extends "core/base_temporal.html" %}
+
+{% block titulo %}Verificación{% endblock %}
+{% block encabezado %}Verificación de operaciones{% endblock %}
+{% block subtitulo %}
+  {{ hoy|date:"Y-m-d" }} · Solo lectura. Comprueba que lo que hacen las otras páginas
+  dejó la base en un estado coherente.
+{% endblock %}
+
+{% block contenido %}
+
+{# ---------- invariantes: la sección que importa ---------- #}
+<section>
+  <h2>Invariantes de la lógica</h2>
+  {% if invariantes_rotas %}
+    <div class="aviso">{{ invariantes_rotas }} de {{ invariantes|length }} invariantes rotas</div>
+  {% else %}
+    <div class="caja" style="border:2px solid #111; margin-bottom:10px;">
+      <div class="cifra">Las {{ invariantes|length }} invariantes se cumplen</div>
+    </div>
+  {% endif %}
+
+  {% for nombre, regla, violaciones in invariantes %}
+    <div class="doc" style="border-left-color: {% if violaciones %}#b3261e{% else %}#1a7f37{% endif %};
+                            {% if violaciones %}background:#fdf2f2;{% endif %}">
+      <header>
+        <span>
+          <span style="color:{% if violaciones %}#b3261e{% else %}#1a7f37{% endif %};">
+            {% if violaciones %}FALLA{% else %}OK{% endif %}
+          </span>
+          — {{ nombre }}
+        </span>
+      </header>
+      <div class="apagado">{{ regla }}</div>
+      {% if violaciones %}
+        <ul>{% for v in violaciones %}<li class="neg">{{ v }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  {% endfor %}
+</section>
+
+{# ---------- inventario ---------- #}
+<section>
+  <h2>Caducidad del inventario disponible</h2>
+  <div class="rejilla">
+    {% for s in semaforo %}
+      <div class="caja {{ s.clave }}">
+        <div class="etiqueta">{{ s.etiqueta }}</div>
+        <div class="cifra">{{ s.lotes }}</div>
+        <div class="sub">{{ s.unidades|floatformat:3 }} u · ${{ s.valor|floatformat:2 }}</div>
+      </div>
+    {% endfor %}
+    <div class="caja">
+      <div class="etiqueta">Valor total</div>
+      <div class="cifra">${{ valor_inventario|floatformat:2 }}</div>
+      <div class="sub">lotes con existencia</div>
+    </div>
+  </div>
+</section>
+
+{% if caducados_con_stock %}
+<section>
+  <h2>Caducados que siguen con existencia</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Lote</th><th>Producto</th><th>Almacén</th><th>Caducó</th><th class="num">Días</th><th class="num">Existencia</th></tr></thead>
+    <tbody>
+    {% for l in caducados_con_stock %}
+      <tr>
+        <td>{{ l.codigo }}</td><td>{{ l.producto.sku }}</td><td>{{ l.almacen.clave }}</td>
+        <td>{{ l.fecha_caducidad|date:"Y-m-d" }}</td>
+        <td class="num neg">{{ l.dias_para_caducar }}</td>
+        <td class="num">{{ l.cantidad_actual|floatformat:3 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<section>
+  <h2>Existencias por producto</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>SKU</th><th>Almacén</th><th class="num">Lotes</th><th class="num">Unidades</th></tr></thead>
+    <tbody>
+    {% for e in existencias %}
+      <tr>
+        <td>{{ e.producto__sku }}</td><td>{{ e.almacen__clave }}</td>
+        <td class="num">{{ e.lotes }}</td><td class="num">{{ e.unidades|floatformat:3 }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="4" class="vacio">Sin existencias.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- pedidos ---------- #}
+<section>
+  <h2>Pedidos pendientes de surtir</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Folio</th><th>Cliente</th><th>Almacén</th><th>Fecha</th><th>Estatus</th><th>Línea</th><th class="num">Pedido</th><th class="num">Surtido</th><th class="num">Pendiente</th></tr></thead>
+    <tbody>
+    {% for p in pedidos_pendientes %}
+      {% for d in p.detalles.all %}
+      <tr>
+        {% if forloop.first %}
+          <td rowspan="{{ p.detalles.all|length }}">{{ p.folio }}</td>
+          <td rowspan="{{ p.detalles.all|length }}">{{ p.cliente.nombre_comercial }}</td>
+          <td rowspan="{{ p.detalles.all|length }}">{{ p.almacen_origen.clave }}</td>
+          <td rowspan="{{ p.detalles.all|length }}">{{ p.fecha_pedido|date:"Y-m-d" }}</td>
+          <td rowspan="{{ p.detalles.all|length }}">{{ p.get_estatus_display }}</td>
+        {% endif %}
+        <td>{{ d.producto.sku }}</td>
+        <td class="num">{{ d.cantidad_pedida|floatformat:3 }}</td>
+        <td class="num">{{ d.cantidad_surtida|floatformat:3 }}</td>
+        <td class="num{% if d.cantidad_pendiente %} neg{% endif %}">{{ d.cantidad_pendiente|floatformat:3 }}</td>
+      </tr>
+      {% endfor %}
+    {% empty %}
+      <tr><td colspan="9" class="vacio">Nada pendiente de surtir.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Pedidos por estatus</h2>
+  <div class="rejilla">
+    {% for p in pedidos_por_estatus %}
+      <div class="caja"><div class="etiqueta">{{ p.estatus }}</div><div class="cifra">{{ p.n }}</div></div>
+    {% empty %}
+      <div class="vacio">Sin pedidos.</div>
+    {% endfor %}
+  </div>
+</section>
+
+{# ---------- compras ---------- #}
+<section>
+  <h2>Órdenes de compra abiertas</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Folio</th><th>Proveedor</th><th>Emisión</th><th>Estatus</th><th>Línea</th><th class="num">Pedido</th><th class="num">Recibido</th><th class="num">Pendiente</th></tr></thead>
+    <tbody>
+    {% for o in compras_abiertas %}
+      {% for d in o.detalles.all %}
+      <tr>
+        {% if forloop.first %}
+          <td rowspan="{{ o.detalles.all|length }}">{{ o.folio }}</td>
+          <td rowspan="{{ o.detalles.all|length }}">{{ o.proveedor.nombre }}</td>
+          <td rowspan="{{ o.detalles.all|length }}">{{ o.fecha_emision|date:"Y-m-d" }}</td>
+          <td rowspan="{{ o.detalles.all|length }}">{{ o.get_estatus_display }}</td>
+        {% endif %}
+        <td>{{ d.producto.sku }}</td>
+        <td class="num">{{ d.cantidad_pedida|floatformat:3 }}</td>
+        <td class="num">{{ d.cantidad_recibida|floatformat:3 }}</td>
+        <td class="num{% if d.cantidad_pendiente %} neg{% endif %}">{{ d.cantidad_pendiente|floatformat:3 }}</td>
+      </tr>
+      {% endfor %}
+    {% empty %}
+      <tr><td colspan="8" class="vacio">Sin órdenes abiertas.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- reparto ---------- #}
+<section>
+  <h2>Clientes activos por día de pedido</h2>
+  <div class="rejilla">
+    {% for c in carga_semanal %}
+      <div class="caja"><div class="etiqueta">{{ c.dia }}</div><div class="cifra">{{ c.clientes }}</div></div>
+    {% endfor %}
+  </div>
+</section>
+
+{# ---------- movimientos ---------- #}
+<section>
+  <h2>Últimos 25 movimientos de inventario</h2>
+  <div class="wrap"><table>
+    <thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Cantidad</th><th>Lote</th><th>Usuario</th><th>Origen</th></tr></thead>
+    <tbody>
+    {% for m in movimientos %}
+      <tr>
+        <td>{{ m.fecha|date:"Y-m-d H:i" }}</td>
+        <td>{{ m.get_tipo_display }}</td>
+        <td class="num{% if m.cantidad < 0 %} neg{% endif %}">{{ m.cantidad|floatformat:3 }}</td>
+        <td>{{ m.lote.codigo }}</td>
+        <td>{{ m.usuario|default:"—" }}</td>
+        <td>
+          {% if m.recepcion_detalle_id %}recepción #{{ m.recepcion_detalle_id }}
+          {% elif m.surtido_detalle_id %}surtido #{{ m.surtido_detalle_id }}
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="vacio">Sin movimientos.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>Conteo de registros</h2>
+  <div class="rejilla">
+    {% for nombre, n in conteos %}
+      <div class="caja"><div class="etiqueta">{{ nombre }}</div><div class="cifra">{{ n }}</div></div>
+    {% endfor %}
+  </div>
+</section>
+
+{% endblock %}
