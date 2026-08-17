@@ -74,7 +74,19 @@ class OrdenCompra(TimeStampedModel):
         CONFIRMADA = "confirmada", "Confirmada"
         RECIBIDA_PARCIAL = "recibida_parcial", "Recibida parcial"
         RECIBIDA = "recibida", "Recibida"
+        CERRADA_INCOMPLETA = "cerrada_incompleta", "Cerrada con faltante"
         CANCELADA = "cancelada", "Cancelada"
+
+    # Estatus en los que la orden ya no espera más mercancía.
+    ESTATUS_FINALES = frozenset(
+        {Estatus.RECIBIDA, Estatus.CERRADA_INCOMPLETA, Estatus.CANCELADA}
+    )
+
+    # Los que deduce `recalcular_estatus` de los hechos. El resto son manuales:
+    # dicen en qué punto del trámite va la orden, cosa que el sistema no sabe.
+    ESTATUS_DEDUCIDOS = frozenset(
+        {Estatus.RECIBIDA_PARCIAL, Estatus.RECIBIDA, Estatus.CERRADA_INCOMPLETA}
+    )
 
     folio = models.CharField(
         "folio",
@@ -113,7 +125,58 @@ class OrdenCompra(TimeStampedModel):
 
     @property
     def esta_completa(self):
+        """Ya no queda nada por recibir — llegó todo o lo que faltó se cerró."""
         return all(d.cantidad_pendiente == 0 for d in self.detalles.all())
+
+    @property
+    def cantidad_faltante(self):
+        """Lo que se dio por no recibido al cerrar líneas, sumado."""
+        return sum((d.cantidad_faltante for d in self.detalles.all()), Decimal("0"))
+
+    @property
+    def esta_abierta(self):
+        return self.estatus not in self.ESTATUS_FINALES
+
+    def recalcular_estatus(self, guardar=True):
+        """Deduce el estatus a partir de lo recibido y lo cerrado.
+
+        Vive aquí y no en RecepcionDetalle porque ahora hay dos cosas que
+        cambian el avance de una orden: recibir mercancía y cerrar una línea
+        declarando que el resto ya no llega. Ambas deben terminar en el mismo
+        cálculo o la orden queda contando una historia distinta según por dónde
+        se le mueva.
+
+        No toca las órdenes canceladas ni las que no tienen líneas todavía.
+        """
+        if self.estatus == self.Estatus.CANCELADA:
+            return self.estatus
+
+        detalles = list(self.detalles.all())
+        if not detalles:
+            return self.estatus
+
+        if all(d.cantidad_pendiente == 0 for d in detalles):
+            hubo_faltante = any(d.cantidad_faltante > 0 for d in detalles)
+            nuevo = self.Estatus.CERRADA_INCOMPLETA if hubo_faltante else self.Estatus.RECIBIDA
+        elif any(d.cantidad_recibida > 0 for d in detalles):
+            nuevo = self.Estatus.RECIBIDA_PARCIAL
+        elif self.estatus in self.ESTATUS_DEDUCIDOS:
+            # Los hechos ya no sostienen el estatus que traía: pasa al reabrir
+            # una línea que se había cerrado sin recibir nada. Si no se corrige
+            # aquí, la orden se queda marcada como cerrada esperando mercancía.
+            # Vuelve a «confirmada» porque es lo único que se puede afirmar: la
+            # orden existe y espera al proveedor.
+            nuevo = self.Estatus.CONFIRMADA
+        else:
+            # Nada recibido y nada cerrado: sigue donde el usuario la haya dejado
+            # (borrador, enviada o confirmada).
+            return self.estatus
+
+        if nuevo != self.estatus:
+            self.estatus = nuevo
+            if guardar:
+                self.save(update_fields=["estatus", "actualizado_en"])
+        return self.estatus
 
     def save(self, *args, **kwargs):
         if not self.folio:
@@ -135,12 +198,25 @@ class OrdenCompra(TimeStampedModel):
 
 
 class OrdenCompraDetalle(TimeStampedModel):
-    """Una línea de una orden de compra: cuánto se pidió de un producto."""
+    """Una línea de una orden de compra: cuánto se pidió de un producto.
+
+    Una línea puede cerrarse antes de recibirse completa. Eso distingue las dos
+    situaciones que antes se veían igual: "faltan 3 y llegan el jueves" (línea
+    abierta) contra "faltan 3 y ya no llegan" (línea cerrada, con motivo). Sin
+    la distinción, una orden mal surtida se quedaba en «recibida parcial» para
+    siempre y nadie podía preguntar en qué falla cada proveedor.
+    """
 
     class UnidadCompra(models.TextChoices):
         CAJA = "caja", "Caja"
         PIEZA = "pieza", "Pieza"
         KILOGRAMO = "kilogramo", "Kilogramo"
+
+    class MotivoFaltante(models.TextChoices):
+        NO_SURTIDO = "no_surtido", "No lo surtió el proveedor"
+        AGOTADO = "agotado", "Agotado con el proveedor"
+        CALIDAD = "calidad", "Rechazado por calidad"
+        CANCELADO = "cancelado", "Cancelado por nosotros"
 
     orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name="detalles", verbose_name="orden")
     producto = models.ForeignKey(Producto, on_delete=models.PROTECT, related_name="detalles_orden_compra", verbose_name="producto")
@@ -151,6 +227,26 @@ class OrdenCompraDetalle(TimeStampedModel):
     )
     costo_unitario = models.DecimalField(
         "costo unitario", max_digits=10, decimal_places=2, help_text="Fotografía al momento del pedido."
+    )
+
+    # --- cierre con faltante -------------------------------------------------
+    cerrado = models.BooleanField(
+        "cerrado",
+        default=False,
+        help_text="Lo que faltó de esta línea ya no va a llegar; deja de contar como pendiente.",
+    )
+    motivo_faltante = models.CharField(
+        "motivo del faltante", max_length=20, choices=MotivoFaltante.choices, blank=True
+    )
+    notas_faltante = models.CharField("notas del faltante", max_length=255, blank=True)
+    cerrado_en = models.DateTimeField("cerrado en", null=True, blank=True)
+    cerrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lineas_compra_cerradas",
+        verbose_name="cerrado por",
     )
 
     class Meta:
@@ -173,7 +269,25 @@ class OrdenCompraDetalle(TimeStampedModel):
 
     @property
     def cantidad_pendiente(self):
+        """Lo que todavía se espera del proveedor.
+
+        Una línea cerrada no espera nada, aunque no haya llegado completa: lo
+        que faltó se contabiliza en `cantidad_faltante`, no aquí.
+        """
+        if self.cerrado:
+            return Decimal("0")
         return self.cantidad_pedida - self.cantidad_recibida
+
+    @property
+    def cantidad_faltante(self):
+        """Lo que se pidió, no llegó, y se dio por perdido al cerrar la línea."""
+        if not self.cerrado:
+            return Decimal("0")
+        return max(self.cantidad_pedida - self.cantidad_recibida, Decimal("0"))
+
+    @property
+    def puede_cerrarse(self):
+        return not self.cerrado and self.cantidad_pendiente > 0
 
 
 class Recepcion(TimeStampedModel):
@@ -230,11 +344,26 @@ class RecepcionDetalle(TimeStampedModel):
     def __str__(self):
         return f"{self.recepcion} — {self.orden_detalle.producto} ({self.cantidad_recibida})"
 
+    @property
+    def importe(self):
+        """Lo que esta línea agregó al valor del inventario."""
+        return self.cantidad_recibida * self.costo_unitario_real
+
     def clean(self):
         super().clean()
         if self.fecha_caducidad and self.fecha_caducidad < timezone.now().date():
             raise ValidationError({"fecha_caducidad": "La fecha de caducidad no puede ser pasada."})
         if self.orden_detalle_id:
+            if self.orden_detalle.cerrado:
+                raise ValidationError(
+                    {
+                        "orden_detalle": (
+                            f"La línea de {self.orden_detalle.producto} está cerrada "
+                            f"({self.orden_detalle.get_motivo_faltante_display()}); "
+                            "reábrela antes de recibir más."
+                        )
+                    }
+                )
             limite = self.orden_detalle.cantidad_pendiente * Decimal("1.10")
             if self.cantidad_recibida > limite:
                 raise ValidationError(
@@ -271,17 +400,4 @@ class RecepcionDetalle(TimeStampedModel):
                 usuario=self.recepcion.recibido_por,
                 recepcion_detalle=self,
             )
-            self._recalcular_estatus_orden()
-
-    def _recalcular_estatus_orden(self):
-        orden = self.orden_detalle.orden
-        detalles = list(orden.detalles.all())
-        if all(d.cantidad_pendiente == 0 for d in detalles):
-            nuevo_estatus = OrdenCompra.Estatus.RECIBIDA
-        elif any(d.cantidad_recibida > 0 for d in detalles):
-            nuevo_estatus = OrdenCompra.Estatus.RECIBIDA_PARCIAL
-        else:
-            return
-        if orden.estatus != nuevo_estatus:
-            orden.estatus = nuevo_estatus
-            orden.save(update_fields=["estatus"])
+            self.orden_detalle.orden.recalcular_estatus()

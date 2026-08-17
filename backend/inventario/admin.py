@@ -1,4 +1,8 @@
+from urllib.parse import urlencode
+
 from django.contrib import admin
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils.html import format_html
 
 from .models import Almacen, Lote, MovimientoInventario
@@ -76,12 +80,25 @@ class LoteAdmin(SoloLecturaAdminMixin, admin.ModelAdmin):
         "cantidad_actual",
         "valor_actual",
         "activo",
+        "etiqueta",
     )
     list_filter = ("almacen", "activo", PorCaducarListFilter, EstatusCaducidadListFilter)
     search_fields = ("codigo", "producto__sku", "codigo_proveedor")
     list_select_related = ("producto", "almacen")
     list_per_page = 50
     readonly_fields = [f.name for f in Lote._meta.fields]
+    actions = ["imprimir_etiquetas"]
+
+    @admin.display(description="etiqueta")
+    def etiqueta(self, obj):
+        url = reverse("inventario:etiquetas_lote")
+        return format_html('<a href="{}?lotes={}" target="_blank">Imprimir</a>', url, obj.pk)
+
+    @admin.action(description="Imprimir etiquetas (hoja Avery 5163)")
+    def imprimir_etiquetas(self, request, queryset):
+        ids = ",".join(str(pk) for pk in queryset.values_list("pk", flat=True))
+        url = reverse("inventario:etiquetas_lote")
+        return redirect(f"{url}?{urlencode({'lotes': ids})}")
 
     @admin.display(description="días para caducar", ordering="fecha_caducidad")
     def dias_para_caducar(self, obj):

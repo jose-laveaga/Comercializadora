@@ -1,0 +1,120 @@
+{% extends "core/base_temporal.html" %}
+
+{% block titulo %}Compras{% endblock %}
+{% block encabezado %}Compras{% endblock %}
+{% block subtitulo %}
+  Lo que se le pidió a cada proveedor y qué tanto llegó.
+{% endblock %}
+
+{% block contenido %}
+
+{# ---------- nueva orden ---------- #}
+<section>
+  <h2>Nueva orden de compra</h2>
+  {% if not hay_proveedores or not hay_almacenes %}
+    <p class="neg">
+      {% if not hay_proveedores %}No hay proveedores activos.{% endif %}
+      {% if not hay_almacenes %}No hay almacenes activos.{% endif %}
+      Dalos de alta en el <a href="/admin/">admin</a> antes de crear una orden.
+    </p>
+  {% else %}
+    <div class="panel ancho">
+      <p class="apagado">
+        Se crea en borrador y sin líneas; los productos se agregan en su ficha.
+      </p>
+      <form method="post" action="{% url 'core:compra_crear' %}">
+        {% csrf_token %}
+        {{ form_orden.as_p }}
+        <button type="submit" class="accion">Crear orden</button>
+      </form>
+    </div>
+  {% endif %}
+</section>
+
+{# ---------- órdenes abiertas ---------- #}
+<section>
+  <h2>Órdenes abiertas</h2>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>Folio</th><th>Proveedor</th><th>Almacén</th><th>Emitida</th>
+      <th>Entrega est.</th><th>Estatus</th>
+      <th class="num">Líneas</th><th class="num">Subtotal</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for o in abiertas %}
+      <tr>
+        <td><a href="{% url 'core:compra_ficha' o.pk %}">{{ o.folio }}</a></td>
+        <td>{{ o.proveedor }}</td>
+        <td>{{ o.almacen_destino.clave }}</td>
+        <td>{{ o.fecha_emision|date:"Y-m-d" }}</td>
+        <td>{{ o.fecha_entrega_estimada|date:"Y-m-d"|default:"—" }}</td>
+        <td>{{ o.get_estatus_display }}</td>
+        <td class="num">{{ o.n_lineas }}</td>
+        <td class="num">${{ o.subtotal|floatformat:2 }}</td>
+        <td><a href="{% url 'core:compra_ficha' o.pk %}">Recibir</a></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="9" class="vacio">Ninguna orden abierta.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- faltantes ---------- #}
+<section>
+  <h2>Faltantes recientes</h2>
+  <p class="apagado">
+    Líneas que se cerraron sin haber llegado completas. Esto es lo que se puede
+    consultar gracias a cerrar con motivo en vez de dejar la orden abierta.
+  </p>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>Orden</th><th>Proveedor</th><th>Producto</th>
+      <th class="num">Pedido</th><th class="num">Recibido</th><th class="num">Faltó</th>
+      <th>Motivo</th><th>Notas</th>
+    </tr></thead>
+    <tbody>
+    {% for l in faltantes %}
+      <tr>
+        <td><a href="{% url 'core:compra_ficha' l.orden.pk %}">{{ l.orden.folio }}</a></td>
+        <td>{{ l.orden.proveedor }}</td>
+        <td>{{ l.producto.sku }}</td>
+        <td class="num">{{ l.cantidad_pedida|floatformat:3 }}</td>
+        <td class="num">{{ l.cantidad_recibida|floatformat:3 }}</td>
+        <td class="num neg">{{ l.cantidad_faltante|floatformat:3 }}</td>
+        <td>{{ l.get_motivo_faltante_display }}</td>
+        <td>{{ l.notas_faltante|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="vacio">Nada dado por no recibido todavía.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- cerradas ---------- #}
+<section>
+  <h2>Órdenes cerradas</h2>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>Folio</th><th>Proveedor</th><th>Emitida</th><th>Estatus</th>
+      <th class="num">Faltó</th><th class="num">Subtotal</th>
+    </tr></thead>
+    <tbody>
+    {% for o in cerradas %}
+      <tr>
+        <td><a href="{% url 'core:compra_ficha' o.pk %}">{{ o.folio }}</a></td>
+        <td>{{ o.proveedor }}</td>
+        <td>{{ o.fecha_emision|date:"Y-m-d" }}</td>
+        <td>{{ o.get_estatus_display }}</td>
+        <td class="num{% if o.cantidad_faltante %} neg{% endif %}">{{ o.cantidad_faltante|floatformat:3 }}</td>
+        <td class="num">${{ o.subtotal|floatformat:2 }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="vacio">Ninguna orden cerrada.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% endblock %}

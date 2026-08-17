@@ -1,0 +1,124 @@
+{% comment %}
+Base de las páginas temporales de operación y diagnóstico.
+
+Todo esto es andamiaje para ver funcionar el backend antes de que exista el
+frontend real: se borra completo (core/templates/core/ + core/consola.py +
+core/views.py + core/urls.py) sin tocar la lógica de negocio.
+{% endcomment %}<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Operación{% endblock %}</title>
+<style>
+  /* Densidad sobre estética. Ninguna esquina redondeada en ningún elemento. */
+  *, *::before, *::after { border-radius: 0 !important; box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 16px 32px;
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #111; background: #fff;
+  }
+  a { color: #111; }
+
+  /* --- navegación entre las páginas temporales --- */
+  nav {
+    display: flex; gap: 0; flex-wrap: wrap;
+    border-bottom: 2px solid #111; margin: 0 -16px 14px; padding: 0 16px;
+    position: sticky; top: 0; background: #fff; z-index: 10;
+  }
+  nav a {
+    padding: 9px 14px; text-decoration: none; border: 1px solid transparent;
+    border-bottom: none; font-size: 12px; letter-spacing: .06em; text-transform: uppercase;
+  }
+  nav a:hover { background: #f0f0f0; }
+  nav a.activa { background: #111; color: #fff; font-weight: 700; }
+  nav .separador { flex: 1; }
+  nav .externo { color: #666; }
+
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .04em; text-transform: uppercase; }
+  h2 {
+    font-size: 12px; margin: 0 0 6px; padding-bottom: 3px;
+    letter-spacing: .08em; text-transform: uppercase; border-bottom: 2px solid #111;
+  }
+  h3 { font-size: 12px; margin: 0 0 5px; letter-spacing: .04em; text-transform: uppercase; color: #333; }
+  .meta { color: #666; margin: 0 0 14px; font-size: 12px; }
+  section { margin-bottom: 22px; }
+
+  .rejilla { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .panel { border: 1px solid #ccc; padding: 9px 11px; flex: 1 1 270px; min-width: 250px; }
+  .panel.ancho { flex: 1 1 100%; }
+
+  label { display: block; font-size: 11px; color: #555; margin-top: 5px; text-transform: uppercase; letter-spacing: .04em; }
+  input, select, textarea, button {
+    font: inherit; border: 1px solid #999; background: #fff; color: #111; padding: 3px 5px; width: 100%;
+  }
+  input[type=checkbox] { width: auto; margin-right: 4px; }
+  button {
+    background: #111; color: #fff; border-color: #111; cursor: pointer;
+    padding: 5px 10px; margin-top: 8px; font-weight: 600; letter-spacing: .04em;
+  }
+  button:hover { background: #333; }
+  button.accion { background: #1a7f37; border-color: #1a7f37; }
+  button.accion:hover { background: #156029; }
+  button.sec { background: #fff; color: #111; border-color: #999; }
+  button.sec:hover { background: #f0f0f0; }
+  .fila { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 6px; }
+  .fila > div { flex: 1 1 110px; }
+  .fila button { flex: 0 0 auto; }
+  .dias { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
+  .dias label { display: flex; align-items: center; margin: 0; text-transform: none; font-size: 12px; color: #111; }
+
+  table { border-collapse: collapse; width: 100%; margin-top: 5px; }
+  th, td { border: 1px solid #ccc; padding: 3px 7px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:nth-child(even) { background: #fafafa; }
+  .vacio { color: #666; font-style: italic; }
+  .neg { color: #b3261e; }
+  .apagado { color: #666; font-size: 11px; }
+  .wrap { overflow-x: auto; }
+
+  .msg { border: 1px solid #111; border-left: 5px solid #111; padding: 6px 9px; margin-bottom: 5px; }
+  .msg.success { border-left-color: #1a7f37; background: #f2f9f4; }
+  .msg.error { border-left-color: #b3261e; background: #fdf2f2; }
+  .msg.warning { border-left-color: #b8860b; background: #fdfaf0; }
+  .aviso { border: 2px solid #b3261e; color: #b3261e; padding: 7px 10px; margin-bottom: 14px; font-weight: 700; }
+
+  .doc { border: 1px solid #ccc; border-left: 5px solid #111; padding: 7px 10px; margin-bottom: 9px; }
+  .doc header { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-weight: 700; }
+  .doc .sub { font-weight: 400; color: #666; }
+  details summary { cursor: pointer; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 4px 0; }
+
+  .caja { border: 1px solid #ccc; padding: 6px 9px; min-width: 120px; flex: 1 1 120px; }
+  .caja .etiqueta { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #666; }
+  .caja .cifra { font-size: 17px; font-weight: 700; }
+  .caja .sub { font-size: 11px; color: #666; }
+  .caja.verde { border-left: 5px solid #2e7d32; }
+  .caja.amarillo { border-left: 5px solid #f9a825; }
+  .caja.rojo { border-left: 5px solid #c62828; }
+  .caja.negro { border-left: 5px solid #212121; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="{% url 'core:inventario' %}" class="{% if pagina == 'inventario' %}activa{% endif %}">Inventario</a>
+  <a href="{% url 'core:compras' %}" class="{% if pagina == 'compras' %}activa{% endif %}">Compras</a>
+  <a href="{% url 'core:dashboard' %}" class="{% if pagina == 'dashboard' %}activa{% endif %}">Verificación</a>
+  <span class="separador"></span>
+  <a href="/admin/" class="externo">Admin</a>
+</nav>
+
+<h1>{% block encabezado %}{% endblock %}</h1>
+<p class="meta">{% block subtitulo %}{% endblock %}</p>
+
+{% if messages %}
+  <section>
+    {% for m in messages %}<div class="msg {{ m.tags }}">{{ m }}</div>{% endfor %}
+  </section>
+{% endif %}
+
+{% block contenido %}{% endblock %}
+
+</body>
+</html>
