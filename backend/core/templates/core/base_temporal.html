@@ -103,6 +103,7 @@ core/views.py + core/urls.py) sin tocar la lógica de negocio.
 
 <nav>
   <a href="{% url 'core:inventario' %}" class="{% if pagina == 'inventario' %}activa{% endif %}">Inventario</a>
+  <a href="{% url 'core:reabastecimiento' %}" class="{% if pagina == 'reabastecimiento' %}activa{% endif %}">Reabastecimiento</a>
   <a href="{% url 'core:compras' %}" class="{% if pagina == 'compras' %}activa{% endif %}">Compras</a>
   <a href="{% url 'core:dashboard' %}" class="{% if pagina == 'dashboard' %}activa{% endif %}">Verificación</a>
   <span class="separador"></span>

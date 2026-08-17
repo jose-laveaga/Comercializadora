@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from catalogo.models import Categoria, LineaProducto, Marca, Producto
 from compras.models import OrdenCompra, OrdenCompraDetalle, Proveedor
-from inventario.models import Almacen
+from inventario.models import Almacen, EstandarInventario
 
 
 class BaseConsolaForm(forms.ModelForm):
@@ -200,3 +200,19 @@ class CerrarLineaForm(forms.Form):
 
     motivo_faltante = forms.ChoiceField(choices=OrdenCompraDetalle.MotivoFaltante.choices)
     notas_faltante = forms.CharField(max_length=255, required=False)
+
+
+# --- reabastecimiento -------------------------------------------------------
+
+
+class EstandarInventarioForm(BaseConsolaForm):
+    """Alta y edición del estándar de un producto en un almacén."""
+
+    class Meta:
+        model = EstandarInventario
+        fields = ("producto", "almacen", "cantidad_minima", "cantidad_objetivo", "notas")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["almacen"].queryset = Almacen.objects.filter(activo=True)
+        self.fields["producto"].queryset = Producto.objects.select_related("linea", "marca")
