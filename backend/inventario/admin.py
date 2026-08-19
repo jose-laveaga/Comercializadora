@@ -5,7 +5,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import Almacen, Lote, MovimientoInventario
+from .models import Almacen, EstandarInventario, Lote, MovimientoInventario
 
 COLOR_ESTATUS_CADUCIDAD = {
     Lote.EstatusCaducidad.VERDE: "#2e7d32",
@@ -135,3 +135,14 @@ class MovimientoInventarioAdmin(SoloLecturaAdminMixin, admin.ModelAdmin):
     list_select_related = ("lote", "usuario")
     list_per_page = 50
     readonly_fields = [f.name for f in MovimientoInventario._meta.fields]
+
+
+@admin.register(EstandarInventario)
+class EstandarInventarioAdmin(admin.ModelAdmin):
+    list_display = ("producto", "almacen", "cantidad_minima", "cantidad_objetivo", "activo")
+    list_filter = ("almacen", "activo")
+    search_fields = ("producto__sku", "producto__linea__nombre", "almacen__clave")
+    autocomplete_fields = ("producto", "almacen")
+    list_select_related = ("producto", "almacen")
+    list_editable = ("cantidad_minima", "cantidad_objetivo", "activo")
+    ordering = ("almacen", "producto")

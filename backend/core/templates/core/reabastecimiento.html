@@ -1,0 +1,184 @@
+{% extends "core/base_temporal.html" %}
+
+{% block titulo %}Reabastecimiento{% endblock %}
+{% block encabezado %}Reabastecimiento{% endblock %}
+{% block subtitulo %}
+  Qué hay que comprar hoy. Cruza el estándar de cada producto contra la
+  existencia con la que se puede surtir y contra lo que ya viene en camino.
+{% endblock %}
+
+{% block contenido %}
+
+{# ---------- filtro por almacén ---------- #}
+{% if almacenes|length > 1 %}
+<section>
+  <form method="get" class="fila">
+    <label>Almacén</label>
+    <select name="almacen">
+      <option value="">Todos</option>
+      {% for a in almacenes %}
+        <option value="{{ a.clave }}" {% if clave_activa == a.clave %}selected{% endif %}>{{ a.clave }} — {{ a.nombre }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="sec">Filtrar</button>
+  </form>
+</section>
+{% endif %}
+
+{# ---------- semáforo de abasto ---------- #}
+<section>
+  <h2>Estado del abasto</h2>
+  <div class="rejilla">
+    <div class="caja negro">
+      <div class="etiqueta">Hay que pedir</div>
+      <div class="cifra">{{ conteo.pedir }}</div>
+      <div class="sub">bajo mínimo y sin orden que lo cubra</div>
+    </div>
+    <div class="caja amarillo">
+      <div class="etiqueta">Cubierto por orden</div>
+      <div class="cifra">{{ conteo.cubierto }}</div>
+      <div class="sub">bajo mínimo, pero ya viene en camino</div>
+    </div>
+    <div class="caja verde">
+      <div class="etiqueta">Suficiente</div>
+      <div class="cifra">{{ conteo.suficiente }}</div>
+      <div class="sub">en o por encima del mínimo</div>
+    </div>
+  </div>
+</section>
+
+{# ---------- lo que hay que pedir ---------- #}
+<section>
+  <h2>Por pedir</h2>
+  {% if por_pedir %}
+    <p class="apagado">
+      Está bajo el mínimo y ninguna orden enviada lo cubre. El sugerido es lo
+      que falta para llegar al objetivo, ya descontando lo que viene en camino.
+    </p>
+    <div class="wrap"><table>
+      <thead><tr>
+        <th>Producto</th><th>Almacén</th>
+        <th class="num">Mínimo</th><th class="num">Objetivo</th>
+        <th class="num">Existencia</th><th class="num">En camino</th>
+        <th class="num">Proyectado</th><th class="num">Sugerido pedir</th>
+      </tr></thead>
+      <tbody>
+      {% for d in por_pedir %}
+        <tr>
+          <td>{{ d.estandar.producto.sku }}<br><span class="apagado">{{ d.estandar.producto.nombre_completo }}</span></td>
+          <td>{{ d.estandar.almacen.clave }}</td>
+          <td class="num">{{ d.estandar.cantidad_minima|floatformat:"-3" }}</td>
+          <td class="num">{{ d.estandar.cantidad_objetivo|floatformat:"-3" }}</td>
+          <td class="num neg">{{ d.existencia|floatformat:"-3" }}</td>
+          <td class="num">{{ d.en_camino|floatformat:"-3" }}</td>
+          <td class="num">{{ d.proyectado|floatformat:"-3" }}</td>
+          <td class="num"><strong>{{ d.sugerido|floatformat:"-3" }}</strong></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="apagado">
+      Para pedirlo, crea la orden en <a href="{% url 'core:compras' %}">Compras</a>.
+    </p>
+  {% else %}
+    <p>Nada por pedir: todo lo que tiene estándar está en o por encima de su mínimo, o ya viene en camino.</p>
+  {% endif %}
+</section>
+
+{# ---------- tablero completo ---------- #}
+<section>
+  <h2>Estándar contra existencia</h2>
+  <p class="apagado">
+    La existencia descarta lo caducado y lo que vence en {{ umbral_util }} días o
+    menos — mercancía que no alcanza a venderse no cuenta como cobertura. La
+    columna «descartado» dice cuánto se dejó fuera por esa razón.
+  </p>
+  <div class="wrap"><table>
+    <thead><tr>
+      <th>Producto</th><th>Almacén</th>
+      <th class="num">Mín.</th><th class="num">Obj.</th>
+      <th class="num">Existencia</th><th class="num">Descartado</th>
+      <th class="num">Cobertura</th>
+      <th class="num">En camino</th><th>Órdenes</th>
+      <th>Estado</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for d in diagnosticos %}
+      <tr>
+        <td>{{ d.estandar.producto.sku }}<br><span class="apagado">{{ d.estandar.producto.nombre_completo }}</span></td>
+        <td>{{ d.estandar.almacen.clave }}</td>
+        <td class="num">{{ d.estandar.cantidad_minima|floatformat:"-3" }}</td>
+        <td class="num">{{ d.estandar.cantidad_objetivo|floatformat:"-3" }}</td>
+        <td class="num{% if d.requiere_pedir %} neg{% endif %}">{{ d.existencia|floatformat:"-3" }}</td>
+        <td class="num">{% if d.excluido %}{{ d.excluido|floatformat:"-3" }}{% else %}—{% endif %}</td>
+        <td class="num">{% if d.cobertura is not None %}{{ d.cobertura }}%{% else %}—{% endif %}</td>
+        <td class="num">{{ d.en_camino|floatformat:"-3" }}</td>
+        <td>
+          {% for o in d.ordenes %}
+            <a href="{% url 'core:compra_ficha' o.pk %}">{{ o.folio }}</a>
+            <span class="apagado">({{ o.pendiente|floatformat:"-3" }}{% if o.fecha_entrega_estimada %}, {{ o.fecha_entrega_estimada|date:"d/m" }}{% endif %})</span><br>
+          {% endfor %}
+          {% for o in d.borradores %}
+            <span class="apagado">{{ o.folio }} — borrador, no cuenta ({{ o.pendiente|floatformat:"-3" }})</span><br>
+          {% endfor %}
+          {% if not d.ordenes and not d.borradores %}—{% endif %}
+        </td>
+        <td>{{ d.estatus_display }}</td>
+        <td>
+          <form method="post" action="{% url 'core:estandar_borrar' d.estandar.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="sec">Quitar</button>
+          </form>
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="11" class="vacio">
+        Ningún producto tiene estándar todavía. Define uno abajo para empezar a
+        vigilarlo.
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{# ---------- definir estándar ---------- #}
+<section>
+  <h2>Definir estándar</h2>
+  <div class="panel ancho">
+    <p class="apagado">
+      El <strong>mínimo</strong> dispara la alarma; el <strong>objetivo</strong>
+      dice hasta dónde subir cuando se pide. Si el producto ya tiene estándar en
+      ese almacén, se actualiza.
+    </p>
+    <form method="post" action="{% url 'core:estandar_guardar' %}">
+      {% csrf_token %}
+      {{ form_estandar.as_p }}
+      <button type="submit" class="accion">Guardar estándar</button>
+    </form>
+  </div>
+</section>
+
+{# ---------- huecos ---------- #}
+{% if sin_estandar %}
+<section>
+  <h2>Sin estándar definido</h2>
+  <p class="apagado">
+    Estos productos no se vigilan: por más que se agoten, no van a aparecer
+    arriba.
+  </p>
+  <div class="wrap"><table>
+    <thead><tr><th>SKU</th><th>Producto</th><th>Almacenamiento</th></tr></thead>
+    <tbody>
+    {% for p in sin_estandar %}
+      <tr>
+        <td>{{ p.sku }}</td>
+        <td>{{ p.nombre_completo }}</td>
+        <td>{{ p.get_tipo_almacenamiento_display|default:"—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% endblock %}

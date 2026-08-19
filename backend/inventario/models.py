@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -51,6 +52,18 @@ class LoteQuerySet(models.QuerySet):
     def caducados(self):
         hoy = timezone.now().date()
         return self.filter(fecha_caducidad__lt=hoy)
+
+    def utiles(self):
+        """Existencia con la que realmente se puede surtir.
+
+        Descarta lo caducado y lo que está en el semáforo negro: en quesos y
+        embutidos, mercancía que vence en cinco días o menos no cuenta como
+        cobertura, porque no alcanza a venderse. Es la existencia contra la que
+        se compara el estándar de inventario — no el valor del inventario, que
+        sí incluye todo lo que físicamente está en el almacén.
+        """
+        limite = timezone.now().date() + timedelta(days=Lote.UMBRAL_NEGRO)
+        return self.disponibles().filter(fecha_caducidad__gt=limite)
 
     def con_estatus_caducidad(self, estatus):
         """Lotes cuyo semáforo de caducidad (Lote.estatus_caducidad) es `estatus`.
@@ -276,3 +289,71 @@ class MovimientoInventario(TimeStampedModel):
 
     def delete(self, *args, **kwargs):
         raise MovimientoInmutableError("No se puede eliminar un movimiento; es un registro permanente.")
+
+
+class EstandarInventario(TimeStampedModel):
+    """Cuánto se quiere tener de un producto en un almacén.
+
+    Es un min-máx clásico y son dos números distintos a propósito: el mínimo
+    dice cuándo preocuparse y el objetivo dice hasta dónde subir. Con un solo
+    número, estar en 47 de 48 marcaría desabasto todos los días y la alarma
+    dejaría de significar algo.
+
+    El estándar es por (producto, almacén) y no solo por producto porque los
+    almacenes tienen régimen de temperatura distinto: lo que se quiere tener en
+    la cámara fría no es lo que se quiere en la bodega seca.
+    """
+
+    producto = models.ForeignKey(
+        Producto, on_delete=models.CASCADE, related_name="estandares", verbose_name="producto"
+    )
+    almacen = models.ForeignKey(
+        Almacen, on_delete=models.CASCADE, related_name="estandares", verbose_name="almacén"
+    )
+    cantidad_minima = models.DecimalField(
+        "mínimo",
+        max_digits=12,
+        decimal_places=3,
+        help_text="Punto de reorden: por debajo de esto hay que pedir.",
+    )
+    cantidad_objetivo = models.DecimalField(
+        "objetivo",
+        max_digits=12,
+        decimal_places=3,
+        help_text="Hasta dónde subir cuando se pide. Nunca menor al mínimo.",
+    )
+    activo = models.BooleanField("activo", default=True)
+    notas = models.CharField("notas", max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "estándar de inventario"
+        verbose_name_plural = "estándares de inventario"
+        ordering = ["almacen", "producto"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["producto", "almacen"], name="estandar_unico_producto_almacen"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad_objetivo__gte=models.F("cantidad_minima")),
+                name="estandar_objetivo_no_menor_al_minimo",
+            ),
+        ]
+        indexes = [models.Index(fields=["almacen", "activo"])]
+
+    def __str__(self):
+        return f"{self.producto.sku} en {self.almacen.clave}: {self.cantidad_minima}/{self.cantidad_objetivo}"
+
+    def clean(self):
+        super().clean()
+        if self.cantidad_minima is not None and self.cantidad_minima < 0:
+            raise ValidationError({"cantidad_minima": "El mínimo no puede ser negativo."})
+        if self.cantidad_objetivo is not None and self.cantidad_objetivo <= 0:
+            raise ValidationError({"cantidad_objetivo": "El objetivo debe ser mayor a cero."})
+        if (
+            self.cantidad_minima is not None
+            and self.cantidad_objetivo is not None
+            and self.cantidad_objetivo < self.cantidad_minima
+        ):
+            raise ValidationError(
+                {"cantidad_objetivo": "El objetivo no puede ser menor al mínimo."}
+            )

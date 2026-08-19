@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import compras_consola, consola, views
+from . import compras_consola, consola, reabastecimiento_consola, views
 
 app_name = "core"
 
@@ -31,6 +31,22 @@ urlpatterns = [
         name="compra_reabrir_faltante",
     ),
     path("compras/<int:pk>/estatus/", compras_consola.cambiar_estatus, name="compra_estatus"),
+    # Página temporal de reabastecimiento (estándar vs. existencia vs. en camino).
+    path(
+        "reabastecimiento/",
+        reabastecimiento_consola.pagina_reabastecimiento,
+        name="reabastecimiento",
+    ),
+    path(
+        "reabastecimiento/estandar/",
+        reabastecimiento_consola.guardar_estandar,
+        name="estandar_guardar",
+    ),
+    path(
+        "reabastecimiento/estandar/<int:pk>/borrar/",
+        reabastecimiento_consola.borrar_estandar,
+        name="estandar_borrar",
+    ),
     # Dashboard de verificación (solo lectura).
     path("verificacion/", views.dashboard, name="dashboard"),
 ]
